@@ -105,3 +105,6 @@ dist
 
 # Notion output
 output
+secrets.json
+scratch/
+last-roam/
