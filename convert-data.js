@@ -1,25 +1,248 @@
 
-let db = require('./last-roam/robinberjon.json')
+let { writeFileSync } = require('fs')
+  , { join } = require('path')
+  , db = require('./last-roam/robinberjon.json')
   , killList = new Set([
       'Big Test Page',
+      'embed',
+      'TODO',
+      'Quick Capture',
+      'DONE',
+      'POMO',
+      'Characters',
+      'roam/js',
+      'roam/css',
+      'Robin\'s CSS Theme',
+      'diagram',
+      'calc',
+      'read:',
+      'Projects',
+      'Next Actions',
+      'calc',
+    ])
+  , forcePeople = new Set([
+      'David Deutsch',
+      'Chiara Marletto',
+      'Helen Nissenbaum',
+      'Brave',
+      'Apple',
+      'Johnny Ryan',
+      'Glimpse Protocol',
+      'David Hilbert',
+      'L. E. J. Brouwer',
+      'Rebecca Spang',
+      'William Sewell Jr.',
+      'Saul Kripke',
+      'Rognvaldur Ingthorsson',
+      'Rebecca Grossman Cohen',
+      'Shane Murray',
+      'Jon Tien',
+      'Advance',
+      'Max Gendler',
+      'Avast / Jumpshot',
+      'VICE',
+      'ODI',
+      'Henry Corrigan-Gibbs',
+      'Mozilla',
+      'WP29',
+      'ITEGA',
+      'Gregory Chaitin',
+      'Erik Hoel',
+      'Jessica Flack',
+      'Unilever',
+      'Alice Fung',
+      'Richard Hamming',
+      'Peter Kelder',
+      'Stough',
+      'Mike Mew',
+      'Wim Hof',
+      'Luíz Sérgio Álvares DeRose',
+      'Swami Rama',
+      'Sri Sri Ravi Shankar',
+      'Patrick McKeown',
+      'Shannon Vallor',
+      'Nolen Gertz',
+      'News Media Alliance',
+      'Hal Singer',
+      'Shushana Zuboff',
+      'Dave Singer',
+      'Niklas Luhmann',
+      'Nicolas Gisin',
+      'Andrey Markov',
+      'Emil Post',
+      'Hannah Arendt',
+      'Ryan Calo',
+      'Paula J. Dalley',
+      'John Holland',
+      'Wesley Salmon',
+      'Phil Dowe',
+      'John Searle',
+      'Danielle Citron',
+      'Ben Wittes',
+      'Cecilia Heyes',
+      'Tracy Dennis-Tiwari',
+      'David Graeber',
+      'Manu Saadia',
+      'Elinor Ostrom',
+      'Judge Hidalgo',
+      'Kelsey Johnson',
+      'Max Weber',
+      'Mark Colyvan',
+      'Rainer Forst',
+      'Michel Foucault',
+      'Steven Lukes',
+      'Jean Baubérot',
+      'WHATWG',
+      'W3C',
+      'IETF',
+      'Digital Content Next',
+      'European Commission',
+      'Aaron Krolik',
+      'Safyia Noble',
+      'Matt Weinberg',
+      'Robin Berjon',
+      'The Economist',
+      'Omid Rafieian',
+      'Angela Merkel',
+      'Kurt Gödel',
+      'Evan Selinger',
+      'Alan Turing',
+      'Arend Heyting',
+      'Andrey Kolmogorov',
+      'Isaac Newton',
+      'Hermann Weyl',
+      'Robin West',
+    ])
+  , forceNotion = new Set([
+      'Computation',
+      'Adtech',
+      'Renormalisation',
+      'Path Integrals',
+      'Algorithmic Information Theory',
+      'Probability',
+      'The Great Filter',
+      'Web Bundles — Notes',
+      'What Is Computation?',
+      'Biases',
+      'Eutrapelia (graceful playfulness)',
+      'Hacker',
+      'Austerity (virtue)',
+      'Zettlekasten',
+      'European Construction',
+      'Europe',
+      'High Modernism',
+      'GTD',
+      'Education Methods',
+    ])
+  , forceReference = new Set([
+      'Common-Knowledge Attacks on Democracy',
+      'How Revolutions Happen',
+      'GDPR',
+      'WebID',
+      'WebBundles',
+      'The Hacker Ethic',
+      'CPNI',
+      'Frida',
+      'Quantum Theory, the Church-Turing Principle, and the Universal Quantum Computer',
+      'Cognitive Gadgets',
+      'Polarisation',
+      'Free the Tipple',
+      'Les 7 laïcités françaises. Le modèle français de laïcité n’existe pas',
+      'Architecture of the World Wide Web, Volume I',
+      'Google Data Collection',
+      'HTML Design Principles',
+      'RFC 6265: HTTP State Management Mechanism',
+      'Watching the Watchers: Nonce-based Inverse Surveillance to Remotely Detect Monitoring',
+      '§230',
+      'The Utopia of Rules',
+    ])
+  , forceIdea = new Set([
+      'Social Media, Narratives, and Democracy',
+      'Fair Market Places (FMP)',
+      'JavaScript Browser ',
+      'Shadow Noosphere',
+      'Islamophobie en France',
+      'Chrome Reverse Surveillance',
+      'Geopolitics of the Internet',
+    ])
+  , forceNYT = new Set([
+      'Times Todo',
+      'Data Governance @ NYT',
+      'California Class Action Litigation Hold 2020',
+      'Content Aggregation Technology (CAT)',
+      'governance.js',
+      'Identity Strategy',
+      'Data Ethics at The Times',
+      'Privacy Hub',
+      'W3C Training',
+      'Data Quality',
+      'WAN-IFRA Slides 2020-11',
+      'State of Privacy 2020 H2',
+      'DLI Presentation',
+    ])
+  , forceProject = new Set([
+      'Privately Yours',
+      'Enough To Be Dangerous',
+      'Technocracy',
+      'Next Job',
+      'Learning Physics',
+      'SPOC',
+      'The Last Stand',
+      'Smashing Privacy Article',
+      'Opinionated',
+    ])
+  , forceHashtag = new Set([
+      'read',
+      'duplicates',
+      'print',
+      'adtech',
+      'optinionated',
+      'trust',
+      'article',
+      'book',
+      'company',
+      'inbox',
+      'ok',
+      'archived',
+      'published',
+      'draft',
+      'table',
+      'cocktail',
+      'standard',
+      'person',
+      'someday',
+      'q',
     ])
   , rootNodesByName = {}
   , nodesByUID = {}
   , uid2root = {}
   , rootMetadata = {}
+  , people = {}
+  , references = {}
+  , notions = {}
+  , ideas = {}
+  , projects = {}
+  , dates = {}
+  , hashtags = {}
+  , nyt = {}
+  , unknown = {}
 ;
 
 indexNodes(db);
+resolveEmbeds();
+findPeople();
+sortTypes();
+save();
 
 // XXX:
 //  - Convert data
-//    - apply kill list
-//    - index nodes
-//    - resolve embeds
-//    - detect people
-//    - extract metadata and type/icon
 //    - convert MD to Notion's internal format
-
+//    - what block types do we need to support
+//      - todo
+//      - plain
+//      - blockquote
+//      - headers
+//      - callouts
 
 function indexNodes (data) {
   data.forEach(node => {
@@ -39,20 +262,22 @@ function indexNodes (data) {
     if (node['edit-time']) meta.lastModified = new Date(node['edit-time']);
     if (node.children) {
       try {
-        node.children.forEach(kid => {
+        node.children = node.children.filter(kid => {
           let match = kid.string && kid.string.match(/^\s*\*\*\s*(status|thread|author|by|date|lang|publisher|related|retrieved|url|type|email)\s*\*\*\s*:\s*(.*)/i);
           if (match) {
             let [, key, value] = match;
             key = key.toLowerCase();
             if (key === 'by') key = 'author';
             meta[key] = value;
+            return false;
           }
-          else throw new Error('Hammer Time!');
+          return true;
         });
       }
       catch (e) {}
     }
     rootMetadata[node.title] = meta;
+    rootNodesByName[node.title].ROBIN_META = meta;
   });
 }
 
@@ -63,4 +288,83 @@ function allChildren (node) {
     node.children.forEach(kid => Array.prototype.push.apply(kids, allChildren(kid)));
   }
   return kids;
+}
+
+// {{[[embed]]: ((4YAViO6u0))}}
+// ((JA4sjnXba))
+function resolveEmbeds () {
+  Object.keys(rootNodesByName).forEach(title => {
+    let node = rootNodesByName[title];
+    allChildren(node).forEach(kid => {
+      if (!kid.string) return;
+      kid.string = kid.string.replace(/\{\{\[\[embed]]: \(\(([^)]+)\)\)}}/g, (_, uid) => {
+        // the goal here is that these will get converted to callouts
+        kid.ROBIN_TYPE = 'embed';
+        let n = nodesByUID[uid]
+          , srcTitle = uid2root[uid]
+        ;
+        if (n) {
+          if (kid.children) kid.children.unshift(n);
+          else kid.children = [n];
+        }
+        return srcTitle ? `[[${srcTitle}]]` : '**Unknown Embed**';
+      });
+      kid.string = kid.string.replace(/\(\(([^)]+)\)\)/g, (_, uid) => {
+        let n = nodesByUID[uid]
+          , srcTitle = uid2root[uid]
+          , body = n ? n.string : '"Unknown Embed"'
+        ;
+        if (srcTitle) body += ` ([[${srcTitle}]])`;
+        return body;
+      });
+    });
+  });
+}
+
+function findPeople () {
+  Object.keys(rootNodesByName).forEach(title => {
+    let meta = rootMetadata[title];
+    if (meta.author) {
+      meta.author.replace(/\[\[([^\]]+)]]/g, (_, person) => {
+        people[person] = rootNodesByName[person];
+      });
+    }
+  });
+}
+
+function sortTypes () {
+  Object.keys(rootNodesByName).forEach(title => {
+    let node = rootNodesByName[title];
+    if (people[title]) return;
+    if (forcePeople.has(title)) return people[title] = node;
+    if (forceNotion.has(title)) return notions[title] = node;
+    if (forceIdea.has(title)) return ideas[title] = node;
+    if (forceReference.has(title)) return references[title] = node;
+    if (forceProject.has(title)) return projects[title] = node;
+    if (forceHashtag.has(title)) return hashtags[title] = node;
+    if (forceNYT.has(title)) return nyt[title] = node;
+    if (/^🟦/.test(title)) return references[title] = node;
+    if (/^🟨/.test(title)) return notions[title] = node;
+    if (/^🟩/.test(title)) return ideas[title] = node;
+    if (/^★/.test(title)) return projects[title] = node;
+    if (/^\d{4}$/.test(title) || /^\w+ \d+\w+, \d{4}$/.test(title)) return dates[title] = node;
+    unknown[title] = node;
+  });
+}
+
+function save () {
+  let out = {
+    people,
+    references,
+    notions,
+    ideas,
+    projects,
+    dates,
+    hashtags,
+    nyt,
+    unknown,
+  };
+  Object.keys(out).forEach(k => {
+    writeFileSync(join(__dirname, 'last-roam', `${k}.json`), JSON.stringify(out[k], null, 2));
+  });
 }
