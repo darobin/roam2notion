@@ -1,6 +1,7 @@
 
 let axios = require('axios')
-  , notionAPI = 'https://www.notion.so/api/v3'
+  , notionBase = 'https://www.notion.so/'
+  , notionAPI = `${notionBase}api/v3`
 ;
 
 module.exports = class NotionClient {
@@ -18,59 +19,52 @@ module.exports = class NotionClient {
   }
   async updateUserInfo () {
     let { recordMap } = await this.post('loadUserContent');
-    // XXX
-    // self._store.store_recordmap(records)
-    // self.current_user = self.get_user(list(records["notion_user"].keys())[0])
-    // self.current_space = self.get_space(list(records["space"].keys())[0])
+    // console.log(recordMap);
+    [this.currentUser] = Object.keys(recordMap.notion_user);
+    [this.currentSpace] = Object.keys(recordMap.space);
     return recordMap;
   }
   async post (endpoint, payload = {}) {
-    let { status, data } = await this.client.post(endpoint, payload);
-    if (status > 400) throw new Error(`Got ${status} error POSTing to ${endpoint} with ${JSON.stringify(payload)}`);
-    return data;
+    try {
+      let { data } = await this.client.post(endpoint, payload);
+      return data;
+    }
+    catch ({ response: { status, data } }) {
+      throw new Error(`Got ${status} error POSTing to ${endpoint} with ${JSON.stringify(payload)}: ${JSON.stringify(data)}`);
+    }
   }
-  async getBlock (urlOrId, forceRefresh) {
-    //
+  async getData (table, urlOrId) {
+    let blockId = extractId(urlOrId);
+    if (table === 'block') {
+      // return .recordMap from this
+      return this.post('loadPageChunk', { pageId: blockId, limit: 10000, cursor: { stack: [] },  chunkNumber: 0, verticalColumns: false });
+    }
+    // return .results from this
+    return this.post('getRecordValues', { requests: [{ table: blockId, id: null }] });
   }
-  // def get_record_data(self, table, id, force_refresh=False):
-  //     return self._store.get(table, id, force_refresh=force_refresh)
-  //
-  // def get_block(self, url_or_id, force_refresh=False):
-  //     """
-  //     Retrieve an instance of a subclass of Block that maps to the block/page identified by the URL or ID passed in.
-  //     """
-  //     block_id = extract_id(url_or_id)
-  //     block = self.get_record_data("block", block_id, force_refresh=force_refresh)
-  //     if not block:
-  //         return None
-  //     if block.get("parent_table") == "collection":
-  //         if block.get("is_template"):
-  //             block_class = TemplateBlock
-  //         else:
-  //             block_class = CollectionRowBlock
-  //     else:
-  //         block_class = BLOCK_TYPES.get(block.get("type", ""), Block)
-  //     return block_class(self, block_id)
+  async getBlock (urlOrId) {
+    return this.getData('block', urlOrId);
+  }
 };
 
+function extractId (urlOrId) {
+  if (urlOrId.startsWith(notionBase)) {
+    return str2uuid(
+      urlOrId
+        .split('#').reverse()[0]
+        .split('/').reverse()[0]
+        .split('&p=').reverse()[0]
+        .split('?')[0]
+        .split('-').reverse()[0]
+      )
+    ;
+  }
+  return urlOrId;
+}
 
-// def extract_id(url_or_id):
-//     """
-//     Extract the block/page ID from a Notion.so URL -- if it's a bare page URL, it will be the
-//     ID of the page. If there's a hash with a block ID in it (from clicking "Copy Link") on a
-//     block in a page), it will instead be the ID of that block. If it's already in ID format,
-//     it will be passed right through.
-//     """
-//     input_value = url_or_id
-//     if url_or_id.startswith(BASE_URL):
-//         url_or_id = (
-//             url_or_id.split("#")[-1]
-//             .split("/")[-1]
-//             .split("&p=")[-1]
-//             .split("?")[0]
-//             .split("-")[-1]
-//         )
-//     try:
-//         return str(uuid.UUID(url_or_id))
-//     except ValueError:
-//         raise InvalidNotionIdentifier(input_value)
+function str2uuid (str) {
+  if (/-/.test(str)) return str;
+  let parts = str.match(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/);
+  parts.shift();
+  return parts.join('-');
+}
