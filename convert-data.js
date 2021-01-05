@@ -1,6 +1,7 @@
 
-let { writeFileSync } = require('fs')
+let { writeFileSync, readFileSync } = require('fs')
   , { join } = require('path')
+  , { v4: uuidv4 } = require('uuid')
   , db = require('./last-roam/robinberjon.json')
   , killList = new Set([
       'Big Test Page',
@@ -226,23 +227,30 @@ let { writeFileSync } = require('fs')
   , hashtags = {}
   , nyt = {}
   , unknown = {}
+  , stableUUIDs = {}
 ;
 
+loadUUIDs();
 indexNodes(db);
 resolveEmbeds();
 findPeople();
 sortTypes();
+processMD();
 save();
 
-// XXX:
-//  - Convert data
-//    - convert MD to Notion's internal format
-//    - what block types do we need to support
-//      - todo
-//      - plain
-//      - blockquote
-//      - headers
-//      - callouts
+function loadUUIDs () {
+  try {
+    stableUUIDs = JSON.parse(readFileSync(join(__dirname, 'last-roam/stable-uuids.json')));
+  }
+  catch (e) {}
+}
+
+function uuid (title) {
+  if (!title) return console.warn(`NO TITLE GIVEN!`);
+  if (stableUUIDs[title]) return stableUUIDs[title];
+  stableUUIDs[title] = uuidv4();
+  return stableUUIDs[title];
+}
 
 function indexNodes (data) {
   data.forEach(node => {
@@ -251,6 +259,7 @@ function indexNodes (data) {
       return;
     }
     rootNodesByName[node.title] = node;
+    node.ROBIN_UUID = uuid(node.title);
     allChildren(node).forEach(kid => {
       if (kid.uid) {
         nodesByUID[kid.uid] = kid;
@@ -299,7 +308,7 @@ function resolveEmbeds () {
       if (!kid.string) return;
       kid.string = kid.string.replace(/\{\{\[\[embed]]: \(\(([^)]+)\)\)}}/g, (_, uid) => {
         // the goal here is that these will get converted to callouts
-        kid.ROBIN_TYPE = 'embed';
+        kid.ROBIN_TYPE = 'embed'; // map to callouts
         let n = nodesByUID[uid]
           , srcTitle = uid2root[uid]
         ;
@@ -352,6 +361,125 @@ function sortTypes () {
   });
 }
 
+function processMD () {
+  Object.keys(rootNodesByName).forEach(title => {
+    let node = rootNodesByName[title];
+    node.ROBIN_TITLE = [[
+      node.title
+        ? node.title.replace(/^(?:🟦|🟨|🟩|★)\s*/, '')
+        : `Untitled ${node.ROBIN_UUID}`
+    ]];
+    if (node.heading) {
+      node.ROBIN_TYPE = 'heading';
+      node.ROBIN_HEADING_LEVEL = node.heading;
+    }
+    allChildren(node).forEach(kid => {
+      if (!kid.string) return;
+      let todoRx = /\{{2,}\[\[TODO\]\]\}{2,}/
+        , doneRx = /\{{2,}\[\[DONE\]\]\}{2,}/
+        , tableRx = /\{{2,}\[\[table\]\]\}{2,}/
+        , diagramRx = /\{{2,}\[\[diagram\]\]\}{2,}/
+        , bqRx = /\^\s*>\s*/
+        , imgRx = /!\[([^\]]*)\]\(([^)]+)\)/g
+      ;
+      if (todoRx.test(kid.string)) {
+        kid.ROBIN_TYPE = 'to_do';
+        kid.ROBIN_TODO_CHECKED = false;
+        kid.string = kid.string.replace(todoRx, '');
+      }
+      else if (doneRx.test(kid.string)) {
+        kid.ROBIN_TYPE = 'to_do';
+        kid.ROBIN_TODO_CHECKED = true;
+        kid.string = kid.string.replace(doneRx, '');
+      }
+      kid.string = kid.string.replace(/\{\{\[\[embed]]: (.*)}}/, '$1');
+      if (tableRx.test(kid.string)) {
+        kid.string = kid.string.replace(tableRx, '**XXX TABLE BELOW XXX**');
+        console.warn(`• Convert table in page ${node.title} (each direct child is a row, columns are sub items in turn for each row)`);
+      }
+      if (diagramRx.test(kid.string)) {
+        kid.string = kid.string.replace(diagramRx, '**XXX DIAGRAM HERE XXX**');
+        console.warn(`• Convert diagram in page ${node.title}`);
+      }
+      if (bqRx.test(kid.string)) {
+        kid.ROBIN_TYPE = 'quote';
+        kid.string = kid.string.replace(bqRx, '');
+      }
+      if (imgRx.test(kid.string)) {
+        kid.string = kid.string.replace(imgRx, '**XXX INSERT IMAGE "$2" WITH ALT "$1" XXX**');
+        console.warn(`• Embed image in page ${node.title}`);
+      }
+      // We split the string into a series of potential tokens.
+      // We then walk the tokens to produce Notion markup.
+      // In order: Roam links, math, links, bold, italics, code, strike, tags
+      let tokens = kid.string.split(/((?:\[\[[^\]]+\]\])|(?:\$\$.*?\$\$)|(?:\[[^\]]+\]\([^)]+\))|(?:\*\*)|(?:__)|(?:`)|(?:~~)|(?:#\w+))/).filter(Boolean)
+        , states = {
+            b: false,
+            i: false,
+            c: false,
+            s: false,
+          }
+        , token2state = {
+            '**': 'b',
+            __: 'i',
+            '`': 'c',
+            '~~': 's',
+          }
+        , state2notion = () => Object.keys(states).map(k => states[k] ? [k] : false).filter(Boolean)
+        , notion = []
+        , roamLinkRx = /^\[\[([^\]]+)\]\]$/
+        , mathRx = /^\$\$(.*?)\$\$$/
+        , linkRx = /^\[([^\]]+)\]\(([^)]+)\)$/
+        , tagRx = /^#(\w+)$/
+      ;
+      while (tokens.length) {
+        let tok = tokens.shift();
+        if (roamLinkRx.test(tok)) {
+          let [, tit] = tok.match(roamLinkRx)
+            , target = rootNodesByName[tit]
+          ;
+          if (!target) {
+            console.warn(`Found token ${tok} in ${node.title} but it has no matching target.`);
+            continue;
+          }
+          notion.push(['‣', [['p', target.ROBIN_UUID]]]);
+        }
+        else if (tagRx.test(tok)) {
+          let [, tit] = tok.match(tagRx)
+            , target = rootNodesByName[tit]
+          ;
+          if (!target) {
+            console.warn(`Found token ${tok} as tag ${tit} in ${node.title} but it has no matching target.`);
+            continue;
+          }
+          notion.push(['‣', [['p', target.ROBIN_UUID]]]);
+        }
+        else if (mathRx.test(tok)) {
+          let [, math] = tok.match(mathRx);
+          notion.push(['⁍', [['e', math]]]);
+        }
+        else if (linkRx.test(tok)) {
+          let [, text, link] = tok.match(linkRx);
+          notion.push([text, state2notion().concat(['a', link])]);
+        }
+        else if (token2state[tok]) {
+          states[token2state[tok]] = !states[token2state[tok]];
+        }
+        else {
+          let st = state2notion();
+          notion.push([tok, st.length ? st : false].filter(Boolean));
+        }
+      }
+      kid.ROBIN_NOTION = notion;
+
+      // warn if we reach the end and not all tokens are false
+      if (Object.values(states).find(s => s)) {
+        console.warn(`In ${node.title}, got child "${kid.string}" that parsed unbalanced (${JSON.stringify(states)}):\n${JSON.stringify(notion, null, 2)}`);
+      }
+    });
+  });
+}
+
 function save () {
   let out = {
     people,
@@ -363,6 +491,7 @@ function save () {
     hashtags,
     nyt,
     unknown,
+    'stable-uuids': stableUUIDs,
   };
   Object.keys(out).forEach(k => {
     writeFileSync(join(__dirname, 'last-roam', `${k}.json`), JSON.stringify(out[k], null, 2));
