@@ -236,6 +236,7 @@ resolveEmbeds();
 findPeople();
 sortTypes();
 processMD();
+flatten();
 save();
 
 function loadUUIDs () {
@@ -371,20 +372,20 @@ function processMD () {
         ? node.title.replace(/^(?:🟦|🟨|🟩|★)\s*/, '')
         : `Untitled ${node.ROBIN_UUID}`
     ]];
-    if (node.heading) {
-      node.ROBIN_TYPE = 'heading';
-      node.ROBIN_HEADING_LEVEL = node.heading;
-    }
     allChildren(node).forEach(kid => {
       if (!kid.string) return;
       let todoRx = /\{{2,}\[\[TODO\]\]\}{2,}/
         , doneRx = /\{{2,}\[\[DONE\]\]\}{2,}/
         , tableRx = /\{{2,}\[\[table\]\]\}{2,}/
         , diagramRx = /\{{2,}\[\[diagram\]\]\}{2,}/
-        , bqRx = /\^\s*>\s*/
+        , bqRx = /^\s*>\s*/
         , imgRx = /!\[([^\]]*)\]\(([^)]+)\)/g
       ;
-      if (todoRx.test(kid.string)) {
+      if (kid.heading) {
+        kid.ROBIN_TYPE = 'heading';
+        kid.ROBIN_HEADING_LEVEL = kid.heading;
+      }
+      else if (todoRx.test(kid.string)) {
         kid.ROBIN_TYPE = 'to_do';
         kid.ROBIN_TODO_CHECKED = false;
         kid.string = kid.string.replace(todoRx, '');
@@ -406,6 +407,7 @@ function processMD () {
       if (bqRx.test(kid.string)) {
         kid.ROBIN_TYPE = 'quote';
         kid.string = kid.string.replace(bqRx, '');
+        if (kid.children && kid.children.length) console.warn(`### Node ${kid.ROBIN_UUID} is a quote with children`);
       }
       if (imgRx.test(kid.string)) {
         kid.string = kid.string.replace(imgRx, '**XXX INSERT IMAGE "$2" WITH ALT "$1" XXX**');
@@ -462,7 +464,7 @@ function processMD () {
         }
         else if (linkRx.test(tok)) {
           let [, text, link] = tok.match(linkRx);
-          notion.push([text, state2notion().concat(['a', link])]);
+          notion.push([text, state2notion().concat([['a', link]])]);
         }
         else if (token2state[tok]) {
           states[token2state[tok]] = !states[token2state[tok]];
@@ -480,6 +482,31 @@ function processMD () {
       }
     });
   });
+}
+
+function flatten () {
+  Object.keys(rootNodesByName).forEach(title => {
+    let node = rootNodesByName[title];
+    flattenByType(node, 'heading');
+  });
+}
+
+function flattenByType (node, type, changeKids = () => {}) {
+  if (!node.children) return;
+  let sourceKids = node.children.concat();
+  for (let i = 0; i < sourceKids.length; i++) {
+    let kid = sourceKids[i];
+    if (kid.children && kid.children.length) {
+      if (kid.ROBIN_TYPE === type) {
+        let insertKids = kid.children;
+        delete kid.children;
+        insertKids.forEach(changeKids);
+        Array.prototype.splice.apply(sourceKids, [i + 1, 0].concat(insertKids));
+      }
+      else flattenByType(kid, type, changeKids);
+    }
+  }
+  node.children = sourceKids;
 }
 
 function save () {

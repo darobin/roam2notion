@@ -31,6 +31,6 @@ async function run () {
     let file = isAbsolute(program.out) ? program.out : join(process.cwd(), program.out);
     writeFileSync(file, json);
   }
-  else process.out.write(json);
+  else process.stdout.write(json);
 }
 run();
