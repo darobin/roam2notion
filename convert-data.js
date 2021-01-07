@@ -264,7 +264,9 @@ function indexNodes (data) {
       if (kid.uid) {
         nodesByUID[kid.uid] = kid;
         uid2root[kid.uid] = node.title;
+        kid.ROBIN_UUID = uuid(kid.uid);
       }
+      else console.warn(`Child node did not have uid: ${JSON.stringify(kid)}`);
     });
     let meta = {};
     if (node['create-time']) meta.created = new Date(node['create-time']);
