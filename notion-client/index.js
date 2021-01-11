@@ -159,6 +159,10 @@ module.exports = class NotionClient {
       ]
     });
   }
+  // XXX: not sure this is right!
+  async createEmptyPage (newId, parentPage = this.currentSpace, modTimes) {
+    return this.createEmptyBlock(newId, 'page', parentPage, parentPage, undefined, modTimes);
+  }
   async setProperties (blockId, props = {}, formats = {}) {
     return this.post('saveTransactions', {
       requestId: uuidv4(),
